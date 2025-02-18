@@ -1,0 +1,296 @@
+
+
+
+#include <util\delay.h>.
+#define US 1000
+#define BL 0  // Backlash
+
+volatile int8_t   EPinA = 0;
+volatile int8_t   EPinB = 0;
+volatile int8_t   EPinZ = 0;
+
+
+volatile int32_t  EncoderCount = 0;
+volatile int8_t  EncoderCountZ =0;
+
+volatile int8_t  PreviousEncoderCodeA =1;
+volatile int8_t  PreviousEncoderCodeB =1;
+
+
+
+
+
+int32_t EC=0;
+int32_t T=0;
+int8_t d[6]={0,0,0,0,0,0};
+int8_t i=0;
+int32_t Backlash=0;
+int32_t MaxT=0;
+int32_t MinT=0;
+
+ISR(INT1_vect) 
+{
+   EPinA=PIND &_BV(2);
+   EPinB=PIND &_BV(3);
+   EPinZ=PIND &_BV(4);
+   if ((EPinA>>2) ^ PreviousEncoderCodeB)   // Check EncoderA with previous Encoder B
+      {
+      EncoderCount++;
+          if(!EPinZ)
+         {
+           EncoderCountZ++;
+         }
+      }
+   else 
+      {
+      EncoderCount--;
+      }
+   PreviousEncoderCodeB = EPinB>>3; 
+      } 
+
+
+ISR(INT0_vect)
+{
+   EPinA=PIND &_BV(2);
+   EPinB=PIND &_BV(3);
+   EPinZ=PIND &_BV(4);
+
+
+   if ((EPinB>3) ^ PreviousEncoderCodeA)   // Check EncoderB with previous Encoder A
+      {
+      EncoderCount--;
+      if(!EPinZ)
+        {
+          EncoderCountZ--;
+        }
+      }
+   else 
+      {
+      EncoderCount++;
+      }
+   PreviousEncoderCodeA = EPinA>>2; 
+} 
+
+
+
+
+
+void setup()
+  { 
+  //  Serial.begin(38400);
+  //The change of state on INT0 and  INT1 generates an interrupt request
+  EICRA = (1<<ISC10)|(1<<ISC00); 
+  //enable both interrupt INT0 and INT1
+  EIMSK =(1<<INT0)|(1<<INT1);  
+  
+  DDRD&=~_BV(2); //set PD2 pin 4 to zero as input ENCODER A (2)
+  DDRD&=~_BV(3); //set PD3 pin 5 to zero as input ENCODER B (3)
+  DDRD&=~_BV(4); //set PD1 pin 6 to zero as input ENCODER Z (4)
+  
+ // PORTD|=_BV(2); //set PD2 pin 4 pullup ENCODER A (2)
+ // PORTD|=_BV(3); //set PD3 pin 5 pullup ENCODER B (3)
+ // PORTD|=_BV(4); //set PD1 pin 6 pullup ENCODER Z (4)
+  
+  DDRD|=_BV(5); // set pin 11 as output(5)
+  DDRD|=_BV(6); // set pin 12 as output(6)    
+  DDRD|=_BV(7); // set pin 13 as output(7) 
+      
+  DDRB|=_BV(0); // set pin 14 as output(8)
+  DDRB|=_BV(1); // set pin 15 as output (9)    
+  DDRB|=_BV(2); // set pin 16 as output(10)
+  DDRB|=_BV(3); // set pin 17 as output (11) 
+  DDRB|=_BV(4); // set pin 18 as output (12) 
+  DDRB|=_BV(5); // set pin 19 as output (13) 
+  
+  DDRC|=_BV(0); // set pin 23 as output (A0) 
+  DDRC|=_BV(1); // set pin 24 as output (A1) 
+  DDRC|=_BV(2); // set pin 25 as output (A2) 
+  DDRC|=_BV(3); // set pin 26 as output (A3) 
+  DDRC|=_BV(4); // set pin 27 as output (A4) 
+  DDRC|=_BV(5); // set pin 28 as output (A5) 
+  }
+
+
+void loop() 
+
+{
+     
+        uint8_t SaveSREG = SREG;   // save interrupt flag
+        cli();   // disable interrupts
+        EC=EncoderCount;
+	SREG = SaveSREG;   // restore the interrupt flag
+
+ MaxT = max(MaxT, EC); 
+ MinT = min(MinT, EC); 
+ 
+ if (MaxT-EC>5)
+   {
+     Backlash=-1;
+     MaxT=EC;
+   }
+
+ if (EC-MinT>5)
+   {
+     Backlash=0;
+     MinT=EC;
+   }
+   
+
+      T=abs(EC)+Backlash*BL;
+      
+      
+      d[5] = T % 10; 
+      T /= 10; 
+      d[4] =T % 10; 
+      T /= 10; 
+      d[3] = T % 10; 
+      T /= 10; 
+      d[2] = T % 10; 
+      T /= 10; 
+      d[1] = T % 10; 
+      T /= 10; 
+      d[0] = T % 10; 
+
+      for (i=0; i <=5; i++)
+        {
+        PORTC|=_BV(i);
+        SetNumber( d[i]); 
+        if(i==1)PORTD&=~_BV(5);
+        _delay_us(US);
+        PORTC&=~_BV(i);    
+        }
+      if (EC<0)
+        {
+        PORTB|=_BV(5);
+        _delay_us(US*3);
+        PORTB&=~_BV(5);
+        }
+      else
+        {
+         PORTB&=~_BV(5);
+        } 
+        
+       
+}
+
+
+
+
+
+void SetNumber(int n)
+  {
+ switch (n)
+     {
+        case 0:
+          PORTB&=~_BV(4); //  a
+          PORTB&=~_BV(3); //  b
+          PORTB&=~_BV(2); //  c 
+          PORTB&=~_BV(1); //  d
+          PORTB&=~_BV(0); //  e
+          PORTD&=~_BV(7); //  f
+          PORTD|= _BV(6); //  g
+          PORTD|= _BV(5); //  dp
+        break;
+        
+        case 1:
+
+          PORTB|= _BV(4); //  a
+          PORTB&=~_BV(3); //  b
+          PORTB&=~_BV(2); //  c 
+          PORTB|= _BV(1); //  d
+          PORTB|= _BV(0); //  e
+          PORTD|= _BV(7); //  f
+          PORTD|= _BV(6); //  g
+          PORTD|= _BV(5); //  dp
+        break;
+        
+         case 2:
+          PORTB&=~_BV(4); //  a
+          PORTB&=~_BV(3); //  b
+          PORTB|= _BV(2); //  c 
+          PORTB&=~_BV(1); //  d
+          PORTB&=~_BV(0); //  e
+          PORTD|= _BV(7); //  f
+          PORTD&=~_BV(6); //  g
+          PORTD|= _BV(5); //  dp
+        break;
+        
+         case 3:
+          PORTB&=~_BV(4); //  a
+          PORTB&=~_BV(3); //  b
+          PORTB&=~_BV(2); //  c 
+          PORTB&=~_BV(1); //  d
+          PORTB|= _BV(0); //  e
+          PORTD|= _BV(7); //  f
+          PORTD&=~_BV(6); //  g
+          PORTD|= _BV(5); //  dp
+        break;
+        
+        case 4:
+          PORTB|= _BV(4); //  a
+          PORTB&=~_BV(3); //  b
+          PORTB&=~_BV(2); //  c 
+          PORTB|= _BV(1); //  d
+          PORTB|= _BV(0); //  e
+          PORTD&=~_BV(7); //  f
+          PORTD&=~_BV(6); //  g
+          PORTD|= _BV(5); //  dp
+        break;
+        
+         case 5:
+          PORTB&=~_BV(4); //  a
+          PORTB|= _BV(3); //  b
+          PORTB&=~_BV(2); //  c 
+          PORTB&=~_BV(1); //  d
+          PORTB|= _BV(0); //  e
+          PORTD&=~_BV(7); //  f
+          PORTD&=~_BV(6); //  g
+          PORTD|= _BV(5); //  dp
+        break; 
+        
+         case 6:
+          PORTB&=~_BV(4); //  a
+          PORTB|= _BV(3); //  b
+          PORTB&=~_BV(2); //  c 
+          PORTB&=~_BV(1); //  d
+          PORTB&=~_BV(0); //  e
+          PORTD&=~_BV(7); //  f
+          PORTD&=~_BV(6); //  g
+          PORTD|= _BV(5); //  dp
+        break;
+        
+        case 7:
+          PORTB&=~_BV(4); //  a
+          PORTB&=~_BV(3); //  b
+          PORTB&=~_BV(2); //  c 
+          PORTB|= _BV(1); //  d
+          PORTB|= _BV(0); //  e
+          PORTD|= _BV(7); //  f
+          PORTD|= _BV(6); //  g
+          PORTD|= _BV(5); //  dp
+        break;
+        
+         case 8:
+          PORTB&=~_BV(4); //  a
+          PORTB&=~_BV(3); //  b
+          PORTB&=~_BV(2); //  c 
+          PORTB&=~_BV(1); //  d
+          PORTB&=~_BV(0); //  e
+          PORTD&=~_BV(7); //  f
+          PORTD&=~_BV(6); //  g
+          PORTD|= _BV(5); //  dp
+         break;
+        
+         case 9:
+          PORTB&=~_BV(4); //  a
+          PORTB&=~_BV(3); //  b
+          PORTB&=~_BV(2); //  c 
+          PORTB&=~_BV(1); //  d
+          PORTB|= _BV(0); //  e
+          PORTD&=~_BV(7); //  f
+          PORTD&=~_BV(6); //  g
+          PORTD|= _BV(5); //  dp
+         break;
+      }
+     
+  }
